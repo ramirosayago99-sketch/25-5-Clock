@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>25 + 5 Clock</title>
+  <style>
+    :root{
+      --bg:#0b1220;
+      --card:#0f172a;
+      --accent:#06b6d4;
+      --muted:#94a3b8;
+      --glass: rgba(255,255,255,0.03);
+    }
+    *{box-sizing:border-box}
+    body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;background:linear-gradient(180deg,#071229,#0b1220);font-family:Inter, system-ui, -apple-system, Arial;color:#e6eef8;padding:2rem}
+
+    #clock{
+      width:100%;max-width:700px;background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));border-radius:12px;padding:1.5rem;box-shadow:0 12px 40px rgba(2,6,23,0.7);border:1px solid rgba(255,255,255,0.03);
+      display:grid;grid-template-columns:1fr 1fr;gap:1rem;align-items:center
+    }
+
+    .control{
+      background:var(--card);padding:1rem;border-radius:8px;border:1px solid var(--glass);text-align:center
+    }
+
+    .label{font-size:0.9rem;color:var(--muted);margin-bottom:0.5rem}
+    .value{font-size:1.8rem;font-weight:700}
+
+    .buttons{display:flex;gap:0.5rem;justify-content:center;margin-top:0.5rem}
+    button{background:transparent;border:1px solid var(--glass);color:var(--muted);padding:0.45rem 0.6rem;border-radius:6px;cursor:pointer}
+    button:active{transform:translateY(1px)}
+
+    #timer{
+      background:linear-gradient(180deg, rgba(6,182,212,0.06), rgba(6,182,212,0.02));border-radius:8px;padding:1rem;text-align:center;border:1px solid var(--glass);grid-column:1/-1
+    }
+
+    #time-left{font-size:3.2rem;font-weight:800;margin:0.5rem 0}
+
+    .controls-main{display:flex;gap:0.75rem;justify-content:center}
+    .big-btn{background:#0b1220;border:1px solid var(--glass);color:#dff8ff;padding:0.6rem 1rem;border-radius:8px;cursor:pointer}
+    .small{padding:0.5rem 0.7rem}
+
+    @media (max-width:640px){#clock{grid-template-columns:1fr;}}
+  </style>
+</head>
+<body>
+  <div id="clock">
+    <div class="control">
+      <div id="break-label" class="label">Break Length</div>
+      <div id="break-length" class="value">5</div>
+      <div class="buttons">
+        <button id="break-decrement">-</button>
+        <button id="break-increment">+</button>
+      </div>
+    </div>
+
+    <div class="control">
+      <div id="session-label" class="label">Session Length</div>
+      <div id="session-length" class="value">25</div>
+      <div class="buttons">
+        <button id="session-decrement">-</button>
+        <button id="session-increment">+</button>
+      </div>
+    </div>
+
+    <div id="timer">
+      <div id="timer-label" class="label">Session</div>
+      <div id="time-left">25:00</div>
+      <div class="controls-main">
+        <button id="start_stop" class="big-btn">Start / Stop</button>
+        <button id="reset" class="big-btn">Reset</button>
+      </div>
+    </div>
+
+    <!-- beep audio (official FCC test audio) -->
+    <audio id="beep" src="https://cdn.freecodecamp.org/testable-projects-fcc/audio/BeepSound.wav"></audio>
+  </div>
+
+  <script>
+    // Element references
+    const breakDecr = document.getElementById('break-decrement');
+    const breakIncr = document.getElementById('break-increment');
+    const sessionDecr = document.getElementById('session-decrement');
+    const sessionIncr = document.getElementById('session-increment');
+    const breakLenEl = document.getElementById('break-length');
+    const sessionLenEl = document.getElementById('session-length');
+    const timerLabel = document.getElementById('timer-label');
+    const timeLeftEl = document.getElementById('time-left');
+    const startStop = document.getElementById('start_stop');
+    const resetBtn = document.getElementById('reset');
+    const beep = document.getElementById('beep');
+
+    // State
+    let breakLength = 5; // minutes
+    let sessionLength = 25; // minutes
+    let timeLeft = sessionLength * 60; // seconds
+    let running = false;
+    let onBreak = false;
+    let intervalId = null;
+
+    // Helpers
+    function formatTime(s){
+      const mm = Math.floor(s/60).toString().padStart(2,'0');
+      const ss = (s%60).toString().padStart(2,'0');
+      return `${mm}:${ss}`;
+    }
+
+    function updateDisplays(){
+      breakLenEl.textContent = breakLength;
+      sessionLenEl.textContent = sessionLength;
+      timeLeftEl.textContent = formatTime(timeLeft);
+      timerLabel.textContent = onBreak ? 'Break' : 'Session';
+    }
+
+    // Constraints: 1..60
+    function clamp(v){ return Math.max(1, Math.min(60, v)); }
+
+    // Handlers for increment/decrement
+    function changeBreak(delta){
+      if(running) return; // disallow while running for stability
+      breakLength = clamp(breakLength + delta);
+      if(onBreak){ timeLeft = breakLength*60; }
+      updateDisplays();
+    }
+    function changeSession(delta){
+      if(running) return;
+      sessionLength = clamp(sessionLength + delta);
+      if(!onBreak){ timeLeft = sessionLength*60; }
+      updateDisplays();
+    }
+
+    breakDecr.addEventListener('click', ()=> changeBreak(-1));
+    breakIncr.addEventListener('click', ()=> changeBreak(1));
+    sessionDecr.addEventListener('click', ()=> changeSession(-1));
+    sessionIncr.addEventListener('click', ()=> changeSession(1));
+
+    // Timer tick
+    function tick(){
+      if(timeLeft > 0){
+        timeLeft--;
+        updateDisplays();
+      } else {
+        // When reaching 0 -> play beep, switch mode, reset timeLeft
+        beep.currentTime = 0;
+        beep.play();
+
+        if(onBreak){
+          // switch to session
+          onBreak = false;
+          timeLeft = sessionLength * 60;
+          timerLabel.textContent = 'Session';
+        } else {
+          // switch to break
+          onBreak = true;
+          timeLeft = breakLength * 60;
+          timerLabel.textContent = 'Break';
+        }
+        updateDisplays();
+      }
+    }
+
+    function startTimer(){
+      if(running) return;
+      running = true;
+      intervalId = setInterval(tick, 1000);
+    }
+    function stopTimer(){
+      running = false;
+      clearInterval(intervalId);
+      intervalId = null;
+    }
+
+    startStop.addEventListener('click', ()=>{
+      if(running) stopTimer(); else startTimer();
+    });
+
+    resetBtn.addEventListener('click', ()=>{
+      stopTimer();
+      // reset state
+      breakLength = 5; sessionLength = 25; onBreak = false; timeLeft = sessionLength * 60;
+      // stop & rewind beep
+      beep.pause();
+      beep.currentTime = 0;
+      updateDisplays();
+    });
+
+    // Initialize UI
+    updateDisplays();
+
+    // Make sure beep is at least 1 second: the provided file meets this requirement.
+    // Accessibility: allow keyboard controls for start/stop and reset
+    startStop.tabIndex = 0; resetBtn.tabIndex = 0;
+  </script>
+</body>
+</html>
